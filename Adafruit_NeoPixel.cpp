@@ -954,15 +954,15 @@ void Adafruit_NeoPixel::show(void) {
     // 20 inst. clocks per bit: HHHHHxxxxxxxxLLLLLLL
     // ST instructions:         ^   ^        ^       (T=0,5,13)
 
-    volatile uint8_t next, bit;
+    volatile uint8_t next, bit, numb = numBytes; // numBytes is 16 bit but numb is 8 bit
 
     hi   = *port |  pinMask;
     lo   = *port & ~pinMask;
     next = lo;
     bit  = 8;
 
-    while (reps--) { // repeat for the number of strings wired in series
     asm volatile(
+     "reps20:"                   "\n\t" // jump point for repeating
      "head20:"                   "\n\t" // Clk  Pseudocode    (T =  0)
       "st   %a[port],  %[hi]"    "\n\t" // 2    PORT = hi     (T =  2)
       "sbrc %[byte],  7"         "\n\t" // 1-2  if(b & 128)
@@ -984,16 +984,22 @@ void Adafruit_NeoPixel::show(void) {
       "st   %a[port], %[lo]"     "\n\t" // 2    PORT = lo     (T = 15)
       "nop"                      "\n\t" // 1    nop           (T = 16)
       "sbiw %[count], 1"         "\n\t" // 2    i--           (T = 18)
-       "brne head20"             "\n"   // 2    if(i != 0) -> (next byte)
+       "brne head20"             "\n\t" // 2    if(i != 0) -> (next byte)
+      "subi %[reps], 1"          "\n\t" // ?    reps--
+       "movw %[count], 20"   "\n\t"
+       "movw %[ptr], %[optr]" "\n\t"
+       "brne reps20"             "\n"   // ?    repeat if reps != 0
       : [port]  "+e" (port),
         [byte]  "+r" (b),
         [bit]   "+r" (bit),
         [next]  "+r" (next),
+        [reps]  "+r" (reps),
+        [numb]  "+r" (numb),
         [count] "+w" (i)
       : [ptr]    "e" (ptr),
+        [optr]   "e" (ptr),
         [hi]     "r" (hi),
         [lo]     "r" (lo));
-    } // while (reps--)
 
 #ifdef NEO_KHZ400
   } else { // 400 KHz
